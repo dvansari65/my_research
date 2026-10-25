@@ -66,3 +66,88 @@ function withdraw()external {
     require(success,"transfer failed");
 }
 ```
+## Pull Over Push Payments Pattern
+
+### The Problem
+- Sending payments automatically can fail:
+
+1. Gas issues 
+2. Reverting Recievers
+3. Unexpexted contract logic
+
+### The Pattern
+- Let users withdraw funds themselves
+
+- Correct Practice
+```solidity
+mapping(address -> uint256) public pendingWithdrawels;
+function credit(address user,uint amount) internal {
+    pendingWithdrawels[user] += amount
+}
+function withdraw() external {
+    uint amount = pendingWithdrawels[msg.sender];
+    require(amount > 0 ,"No funds");
+    pendingWithdrawels[msg.sender] = 0;
+    (bool success) = msg.sender.call{value:amount}("");
+    require(success,"Transfer failed!")
+}
+```
+
+## Upgradeability Pattern (Proxy Contracts)
+
+### The Problem
+- Smart contract are immutable but software evolves
+
+### The Pattern
+Seperate:
+1. Storage ( Proxy )
+2. Logic ( Implementation )
+
+- Simplified Proxy Structure
+```solidity
+contract Proxy {
+    address public implementation;
+
+    function upgrade(address newImplementation) external {
+        implementation = newImplementation;
+    }
+
+    fallback() external payable {
+        address impl = implementation;
+        assembly {
+            delegatecall(gas(), impl, 0, calldatasize(), 0, 0)
+            returndatacopy(0, 0, returndatasize())
+            return(0, returndatasize())
+        }
+    }
+}
+```
+#### But Best Practice is :
+
+Use UUPS or Transparent Proxy patterns via OpenZeppelin.
+Never write raw proxy logic in production unless you deeply understand storage layouts.
+
+## Pausable Circuit Breaker Pattern
+
+### The Problem
+- When exploits happen, minutes matter.
+
+### The Pattern
+- Allow authorised roles to pause critical functions
+
+```solidity
+bool public paused;
+
+modifier whenNotPaused() {
+    require(!paused, "Paused");
+    _;
+}
+
+function pause() external onlyOwner {
+    paused = true;
+}
+
+function unpause() external onlyOwner {
+    paused = false;
+}
+```
