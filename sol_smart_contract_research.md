@@ -151,3 +151,65 @@ function unpause() external onlyOwner {
     paused = false;
 }
 ```
+## Factory Pattern
+
+### The Problem
+Deploying multiple similar contracts manually is inefficient and error-prone.
+
+### The Pattern
+Use a factory contract to create standardized instances.
+
+#### solidity example
+
+```solidity
+contract Wallet {
+    address public owner;
+
+    constructor(address _owner) {
+        owner = _owner;
+    }
+}
+
+contract WalletFactory {
+    Wallet[] public wallets;
+
+    function createWallet() external {
+        Wallet wallet = new Wallet(msg.sender);
+        wallets.push(wallet);
+    }
+}
+```
+## Gas Limit and Unbounded Loops
+
+### The Problem
+- Every transaction has a limited gas budget 
+- Loops consume gas on every iteration
+- If a loop depends on dynamically growing array , its execution cost can increase over time
+- Eventually , loop may need more gas than transaction can afford to execute it 
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+contract Payment {
+    address[] public users;
+
+    function payAll() external {
+        for (uint256 i = 0; i < users.length; i++) {
+            payable(users[i]).transfer(0.01 ether);
+        }
+    }
+```
+- 
+- it will work for small number of users
+- if number of users become large then the loops requires more gas 
+- eventually , payAll() becomes impossible to execute withing the gas limit
+
+### The Pattern
+#### Avoid processing unlimited number of records in a single transaction
+
+- Bounded loops with maximum iteration count
+- Batch processing to divide the work across multiple transactions
+- Pull payments so users withdraw funds independently
+
+
