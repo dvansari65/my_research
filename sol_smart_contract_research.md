@@ -291,3 +291,107 @@ transaction initiator.
 -   `msg.sender` can change across external calls.
 -   `tx.origin` remains the original EOA throughout the transaction.
 -   Use `msg.sender` for access control, never `tx.origin`.
+
+## Integer Overflow, Underflow & Two's Complement
+
+Solidity integers have fixed ranges and cannot store unlimited values.
+
+- **Overflow:** When a value exceeds the maximum limit of its integer type.
+- **Underflow:** When a value goes below the minimum limit.
+
+### Example
+
+```solidity
+uint8 x = 255;
+uint8 y = 1;
+
+uint8 result = x + y; // Reverts in Solidity 0.8+
+```
+
+`uint8` can store values from `0` to `255`. Adding `1` to `255` causes an overflow.
+
+### Checked vs Unchecked Arithmetic
+
+- **Checked (default):** Solidity 0.8.0+ automatically detects overflow and underflow and reverts.
+- **Unchecked:** Disables these checks and allows values to wrap around.
+
+```solidity
+unchecked {
+    uint8 result = 255 + 1; // 0
+}
+```
+
+### Two's Complement
+
+Solidity uses two's complement to represent signed integers (`int8`, `int256`, etc.).
+
+For example, `int8` ranges from `-128` to `127`. Negating its minimum value (`-128`) causes an overflow because `128` cannot be represented by `int8`.
+
+### Security Best Practices
+
+- Validate user inputs using `require`.
+- Avoid `unchecked` unless overflow and underflow are mathematically impossible.
+- Pay special attention to balance, fee, and reward calculations.
+- Use Solidity's SMTChecker to identify potential arithmetic issues.
+- Remember that Solidity versions before 0.8.0 require additional overflow protection, commonly through SafeMath.
+
+## Clearing Mappings
+
+Solidity mappings do not keep track of their stored keys. Therefore, Solidity cannot automatically clear all mapping entries.
+
+**Important:** Deleting an array or struct containing a mapping does not delete the mapping's stored values.
+
+### Example
+
+```solidity
+mapping(uint => uint)[] public array;
+
+function eraseMaps() public {
+    delete array;
+}
+```
+
+If `array[4][128]` contains `256`, deleting `array` resets its length to zero, but the mapping data remains in storage.
+
+If the array is allocated again, the old mapping value may become accessible:
+
+```solidity
+array[4][128]; // Returns 256
+```
+
+### Security Best Practices
+
+- Do not assume `delete` clears nested mappings.
+- Track mapping keys separately if you need to delete individual entries.
+- Use an iterable mapping pattern to maintain a list of keys and delete their values.
+- Consider using a unique ID or mapping generation/version counter to logically invalidate old entries instead of deleting every key.
+
+**Key takeaway:** Deleting a storage array or struct does not automatically clear mappings inside it. Old mapping values can become accessible again.
+
+## Withdrawal pattern
+
+Source: [Solidity docs, Common Patterns](https://docs.soliditylang.org/en/latest/common-patterns.html#withdrawal-from-contracts)
+
+Send funds after an effect by letting the recipient withdraw, not by sending directly from the state-changing function. Record the amount owed in a mapping; the recipient calls `withdraw` later.
+
+```solidity
+mapping(address => uint) pendingWithdrawals;
+
+function becomeRichest() public payable {
+    if (msg.value <= mostSent) revert NotEnoughEther();
+    pendingWithdrawals[richest] += msg.value;
+    richest = msg.sender;
+    mostSent = msg.value;
+}
+
+function withdraw() public {
+    uint amount = pendingWithdrawals[msg.sender];
+    // Remember to zero the pending refund before
+    // sending to prevent reentrancy attacks
+    pendingWithdrawals[msg.sender] = 0;
+    (bool success, ) = payable(msg.sender).call{value: amount}("");
+    require(success);
+}
+```
+
+Why: with direct sending, an attacker can make `richest` a contract whose `receive` or `fallback` fails. Every later `becomeRichest` then fails too and the contract is stuck forever. With the withdrawal pattern the attacker can only make their own `withdraw` fail.
