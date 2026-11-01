@@ -200,7 +200,6 @@ contract Payment {
         }
     }
 ```
-- 
 - it will work for small number of users
 - if number of users become large then the loops requires more gas 
 - eventually , payAll() becomes impossible to execute withing the gas limit
@@ -213,3 +212,82 @@ contract Payment {
 - Pull payments so users withdraw funds independently
 
 
+## `msg.sender` vs `tx.origin` (Authorization Vulnerability)
+
+### What is `msg.sender`?
+
+-   `msg.sender` is the address of the account or contract that directly
+    called the current contract.
+-   It represents the **immediate caller**, not necessarily the person
+    who initiated the transaction.
+-   Its value can change at every external contract call.
+
+### What is `tx.origin`?
+
+-   `tx.origin` is the address of the original EOA that initiated the
+    transaction.
+-   It remains the same throughout the transaction's entire call chain.
+
+### Example
+
+Consider this call chain:
+
+``` text
+Alice (EOA)
+    |
+    v
+TxUserWallet
+    |
+    v
+TxAttackWallet
+    |
+    v
+TxUserWallet
+```
+
+When `TxAttackWallet` calls `TxUserWallet.transferTo()`:
+
+``` solidity
+msg.sender == TxAttackWallet;
+tx.origin == Alice;
+```
+
+Why?
+
+-   `msg.sender` is `TxAttackWallet` because it directly called
+    `transferTo()`.
+-   `tx.origin` is Alice because she initiated the original transaction.
+
+### The Vulnerability
+
+Never use `tx.origin` for authorization.
+
+**Vulnerable code:**
+
+``` solidity
+require(tx.origin == owner);
+```
+
+A malicious contract can trick the owner into interacting with it. It
+can then call the owner's wallet contract again.
+
+Since `tx.origin` still contains the owner's address, the authorization
+check passes, allowing the malicious contract to misuse the owner's
+permissions.
+
+**Correct approach:**
+
+``` solidity
+require(msg.sender == owner, "Not authorized");
+```
+
+Now the check verifies the immediate caller rather than the original
+transaction initiator.
+
+### Key Takeaways
+
+-   `msg.sender` → Who directly called this contract?
+-   `tx.origin` → Who initiated the original transaction?
+-   `msg.sender` can change across external calls.
+-   `tx.origin` remains the original EOA throughout the transaction.
+-   Use `msg.sender` for access control, never `tx.origin`.
