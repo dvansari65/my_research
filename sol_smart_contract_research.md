@@ -367,3 +367,61 @@ array[4][128]; // Returns 256
 - Consider using a unique ID or mapping generation/version counter to logically invalidate old entries instead of deleting every key.
 
 **Key takeaway:** Deleting a storage array or struct does not automatically clear mappings inside it. Old mapping values can become accessible again.
+
+## Denial of Service
+
+A function that transfers funds to a third party before completing the user's action can be blocked by that third party. If the transfer reverts, the whole function reverts.
+
+**Important:** Sending to the owner inside a user-facing function makes every user depend on the owner's address accepting tokens.
+
+### Example
+
+Putty V2 (Code4rena, June 2022). `withdraw` sends the owner's fee first, then the user's strike:
+
+```solidity
+function withdraw(Order memory order) public {
+    ..SNIP..
+    if (fee > 0) {
+        feeAmount = (order.strike * fee) / 1000;
+        ERC20(order.baseAsset).safeTransfer(owner(), feeAmount);
+    }
+    ERC20(order.baseAsset).safeTransfer(msg.sender, order.strike - feeAmount);
+    ..SNIP..
+}
+```
+
+If the fee transfer reverts, the user's transfer never runs. The owner can cause this by setting `owner()` to the zero address (OpenZeppelin ERC20 reverts on transfer to zero) or, for an ERC777 base asset, by pointing `owner()` at a contract whose `tokensReceived` hook reverts. No user can withdraw their strike.
+
+### Fix
+
+Accumulate the fee in a mapping and let the owner pull it separately:
+
+```solidity
+mapping(address => uint256) public ownerFees;
+
+function withdraw(Order memory order) public {
+    ..SNIP..
+    if (fee > 0) {
+        feeAmount = (order.strike * fee) / 1000;
+        ownerFees[order.baseAsset] += feeAmount;
+    }
+    ERC20(order.baseAsset).safeTransfer(msg.sender, order.strike - feeAmount);
+    ..SNIP..
+}
+
+function withdrawFee(address baseAsset) public onlyOwner {
+    uint256 _feeAmount = ownerFees[baseAsset];
+    ownerFees[baseAsset] = 0;
+    ERC20(baseAsset).safeTransfer(owner(), _feeAmount);
+}
+```
+
+### Security Best Practices
+
+- Do not transfer to a third party inside a user-facing function.
+- Record what each party is owed in a mapping and let them withdraw it.
+- Do not assume `owner()` or any recipient can always receive tokens.
+
+**Key takeaway:** A failed transfer to one recipient should never block another user's withdrawal. Use the withdrawal pattern.
+
+Source: [Code4rena finding](https://github.com/code-423n4/2022-06-putty-findings) · [PuttyV2.sol#L500](https://github.com/code-423n4/2022-06-putty/blob/3b6b844bc39e897bd0bbb69897f2deff12dc3893/contracts/src/PuttyV2.sol#L500)
