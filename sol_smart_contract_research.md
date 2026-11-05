@@ -425,3 +425,68 @@ function withdrawFee(address baseAsset) public onlyOwner {
 **Key takeaway:** A failed transfer to one recipient should never block another user's withdrawal. Use the withdrawal pattern.
 
 Source: [Code4rena finding](https://github.com/code-423n4/2022-06-putty-findings) · [PuttyV2.sol#L500](https://github.com/code-423n4/2022-06-putty/blob/3b6b844bc39e897bd0bbb69897f2deff12dc3893/contracts/src/PuttyV2.sol#L500)
+
+## Denial of service 
+Blacklisted creditor can block all repayment besides emergency closure Real Wagmi
+
+```solidity 
+ address creditor = underlyingPositionManager.ownerOf(loan.tokenId);
+        // Increase liquidity and transfer liquidity owner reward
+        _increaseLiquidity(cache.saleToken, cache.holdToken, loan, amount0, amount1);
+        uint256 liquidityOwnerReward = FullMath.mulDiv(
+            params.totalfeesOwed,
+            cache.holdTokenDebt,
+            params.totalBorrowedAmount
+        ) / Constants.COLLATERAL_BALANCE_PRECISION;
+
+Vault(VAULT_ADDRESS).transferToken(cache.holdToken, creditor, liquidityOwnerReward);
+```
+
+### Problem
+Tokens like USDC/USDT supports blacklisting. Which prevents the users from sending or recieving tokens.
+If creditor blacklisted by USDC/USDT then fee transfer will always revert. This will cause all repayments to revert, preventing the user from ever repaying their loan and forcing them to default.
+
+## Recommendation approach
+Create an escrow to hold funds in the event that the creditor cannot receive their funds. Implement a try-catch block around the transfer to the creditor. If it fails then send the funds instead to an escrow account, allowing the creditor to claim their tokens later and for the transaction to complete.
+
+Source: ( https://solodit.cyfrin.io/issues/m-4-blacklisted-creditor-can-block-all-repayment-besides-emergency-closure-sherlock-real-wagmi-2-git )
+
+
+## Unhandled Oracle Revert
+A direct call to an external price feed can revert. If nothing handles the revert then every function that depends on the price
+feed reverts too.
+
+**important:** Chainlink's multisig signing can block access to a price feed at any time. A direct call to 'latestRoundData()' then reverts
+
+### Example
+
+Juicebox V2 (Code4rena, July 2022). `JBChainlinkV3PriceFeed` calls Chainlink directly:
+
+```solidity
+function currentPrice(uint256 _decimals) external view override returns (uint256) {
+  // Get the latest round information. Only need the price is needed.
+  (, int256 _price, , , ) = feed.latestRoundData();
+```
+
+`JBPrices` relies on it for every price query:
+
+```solidity
+if (_feed != IJBPriceFeed(address(0))) return _feed.currentPrice(_decimals);
+```
+
+If `latestRoundData()` reverts, no price can be queried. Feeds cannot be changed after they are configured, so the denial of service is permanent.
+
+### Fix
+
+Surround the call to `latestRoundData()` with `try/catch` instead of calling it directly. If the call reverts, the catch block can call a fallback oracle or handle the error another way.
+
+### Security Best Practices
+
+- Query external price feeds with `try/catch` so the calling contract stays in control.
+- Have a fallback for when the feed fails.
+- Allow the feed address to be updated after it is configured.
+
+**Key takeaway:** An external oracle call that reverts should not be able to lock your contract. Handle the failure explicitly.
+
+Source: [Solodit: M-09 Unhandled chainlink revert](https://solodit.cyfrin.io/issues/m-09-unhandled-chainlink-revert-would-lock-all-price-oracle-access-code4rena-juicebox-juicebox-v2-contest-git) · [Code4rena report](https://code4rena.com/contests/2022-07-juicebox-v2-contest) · [JBPrices.sol#L69](https://github.com/jbx-protocol/juice-contracts-v2-code4rena/blob/828bf2f3e719873daa08081cfa0d0a6deaa5ace5/contracts/JBPrices.sol#L69) · [JBChainlinkV3PriceFeed.sol#L42-L44](https://github.com/jbx-protocol/juice-contracts-v2-code4rena/blob/828bf2f3e719873daa08081cfa0d0a6deaa5ace5/contracts/JBChainlinkV3PriceFeed.sol#L42-L44)
+
