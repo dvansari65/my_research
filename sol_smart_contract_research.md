@@ -446,7 +446,7 @@ Vault(VAULT_ADDRESS).transferToken(cache.holdToken, creditor, liquidityOwnerRewa
 Tokens like USDC/USDT supports blacklisting. Which prevents the users from sending or recieving tokens.
 If creditor blacklisted by USDC/USDT then fee transfer will always revert. This will cause all repayments to revert, preventing the user from ever repaying their loan and forcing them to default.
 
-## Recommendation approach
+### Recommendation approach
 Create an escrow to hold funds in the event that the creditor cannot receive their funds. Implement a try-catch block around the transfer to the creditor. If it fails then send the funds instead to an escrow account, allowing the creditor to claim their tokens later and for the transaction to complete.
 
 Source: ( https://solodit.cyfrin.io/issues/m-4-blacklisted-creditor-can-block-all-repayment-besides-emergency-closure-sherlock-real-wagmi-2-git )
@@ -490,3 +490,33 @@ Surround the call to `latestRoundData()` with `try/catch` instead of calling it 
 
 Source: [Solodit: M-09 Unhandled chainlink revert](https://solodit.cyfrin.io/issues/m-09-unhandled-chainlink-revert-would-lock-all-price-oracle-access-code4rena-juicebox-juicebox-v2-contest-git) · [Code4rena report](https://code4rena.com/contests/2022-07-juicebox-v2-contest) · [JBPrices.sol#L69](https://github.com/jbx-protocol/juice-contracts-v2-code4rena/blob/828bf2f3e719873daa08081cfa0d0a6deaa5ace5/contracts/JBPrices.sol#L69) · [JBChainlinkV3PriceFeed.sol#L42-L44](https://github.com/jbx-protocol/juice-contracts-v2-code4rena/blob/828bf2f3e719873daa08081cfa0d0a6deaa5ace5/contracts/JBChainlinkV3PriceFeed.sol#L42-L44)
 
+
+## H-03: Front-running through mutable order parameters
+
+**Vulnerability:** An order creator can modify the order's `limitPrice` after an executor submits a `fillOrder()` transaction but before it gets executed.
+
+**Root Cause:**
+- `fillOrder()` calculates the output amount (`amtOut`) using the order's `limitPrice`.
+- The order creator can update this price before execution.
+- The contract does not validate whether the updated price is within the executor's expected price range.
+- As a result, the executor may transfer more tokens than expected to the order recipient.
+
+**Attack Flow:**
+1. The creator creates an order with an initial limit price.
+2. The executor submits a transaction to fill the order.
+3. The creator observes the pending transaction in the mempool.
+4. The creator front-runs the executor by updating the order's limit price.
+5. The executor's transaction executes using the modified price.
+6. `amtOut` is recalculated using the manipulated price, potentially allowing the creator to steal the executor's assets.
+
+**Impact:**
+The executor may lose funds because the order's output amount can increase beyond what they originally expected.
+
+**Mitigation:**
+- Validate the order's `limitPrice` against the minimum and maximum prices accepted by the executor.
+- Consider passing expected price constraints directly into `fillOrder()`.
+- Alternatively, require order modifications to cancel the existing order and create a new one.
+
+**Security Takeaway:**
+
+Never assume that order parameters remain unchanged between transaction submission and execution. Validate mutable parameters against the executor's expected constraints to prevent front-running and unexpected asset transfers.
