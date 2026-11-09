@@ -111,3 +111,11 @@ contract Packed_Struct {
     }
 }
 ```
+
+## Keep strings smaller than 32 bytes
+In Solidity, strings are variable length dynamic data types, meaning their length can change and grow as needed.
+
+If the length is 32 bytes or longer, the slot in which they are defined stores the length of the string * 2 + 1, while their actual data is stored elsewhere (the keccak hash of that slot).
+
+However, if a string is less than 32 bytes, the length * 2 is stored at the least significant byte of it’s storage slot and the actual data of the string is stored starting from the most significant byte in the slot in which it is defined.
+
