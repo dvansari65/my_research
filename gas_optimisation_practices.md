@@ -119,3 +119,30 @@ If the length is 32 bytes or longer, the slot in which they are defined stores t
 
 However, if a string is less than 32 bytes, the length * 2 is stored at the least significant byte of it’s storage slot and the actual data of the string is stored starting from the most significant byte in the slot in which it is defined.
 
+## Variables that are never updated should be immutable or constant
+In Solidity, variables which are not intended to be updated should be constant or immutable.
+
+This is because constants and immutable values are embedded directly into the bytecode of the contract which they are defined and does not use storage because of this.
+
+```solidity 
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.20;
+
+contract Constants {
+    uint256 constant MAX_UINT256 = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff;
+
+    function get_max_value() external pure returns (uint256) {
+        return MAX_UINT256;
+    }
+}
+
+// This uses more gas than the above contract
+contract NoConstants {
+    uint256 MAX_UINT256 = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff;
+
+    function get_max_value() external view returns (uint256) {
+        return MAX_UINT256;
+    }
+}
+```
+This saves a lot of gas as we do not make any storage reads which are costly.
