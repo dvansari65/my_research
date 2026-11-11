@@ -146,3 +146,42 @@ contract NoConstants {
 }
 ```
 This saves a lot of gas as we do not make any storage reads which are costly.
+
+## Using mappings instead of arrays to avoid length checks
+
+Solidity arrays perform an extra bounds check whenever you access an element, whereas mappings don't. If your application already guarantees that an index is valid, a mapping can sometimes save gas.
+
+```solidity
+/// get(0) gas cost: 4860
+contract Array {
+    uint256[] a;
+
+    constructor() {
+        a.push() = 1;
+        a.push() = 2;
+        a.push() = 3;
+    }
+
+    function get(uint256 index) external view returns(uint256) {
+        return a[index];
+    }
+}
+
+/// get(0) gas cost: 2758
+contract Mapping {
+    mapping(uint256 => uint256) a;
+
+    constructor() {
+        a[0] = 1;
+        a[1] = 2;
+        a[2] = 3;
+    }
+
+    function get(uint256 index) external view returns(uint256) {
+        return a[index];
+    }
+}
+```
+Just by using a mapping, we get a gas saving of 2102 gas. Why? Under the hood when you read the value of an index of an array, solidity adds bytecode that checks that you are reading from a valid index (i.e. an index strictly less than the length of the array) else it reverts with a panic error (Panic(0x32) to be precise). This prevents it from reading unallocated or worse, allocated storage/memory locations.
+
+Due to the way mappings are (simply a key => value pair), no check like that exists and we are able to read from the a storage slot directly. It’s important to note that when using mappings in this manner, your code should ensure that you are not reading an out of bound index of your canonical array.
