@@ -185,3 +185,64 @@ contract Mapping {
 Just by using a mapping, we get a gas saving of 2102 gas. Why? Under the hood when you read the value of an index of an array, solidity adds bytecode that checks that you are reading from a valid index (i.e. an index strictly less than the length of the array) else it reverts with a panic error (Panic(0x32) to be precise). This prevents it from reading unallocated or worse, allocated storage/memory locations.
 
 Due to the way mappings are (simply a key => value pair), no check like that exists and we are able to read from the a storage slot directly. It’s important to note that when using mappings in this manner, your code should ensure that you are not reading an out of bound index of your canonical array.
+
+## Use storage pointers instead of memory where appropriate
+In Solidity, storage pointers are variables that reference a location in storage of a contract. They are not exactly the same as pointers in languages like C/C++.
+
+It is helpful to know how to use storage pointers efficiently to avoid unnecessary storage reads and perform gas-efficient storage updates.
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.20;
+
+contract StoragePointerUnOptimized {
+    struct User {
+        uint256 id;
+        string name;
+        uint256 lastSeen;
+    }
+
+    constructor() {
+        users[0] = User(0, "John Doe", block.timestamp);
+    }
+
+    mapping(uint256 => User) public users;
+
+    function returnLastSeenSecondsAgo(uint256 _id) public view returns (uint256) {
+        User memory _user = users[_id];
+        uint256 lastSeen = block.timestamp - _user.lastSeen;
+        return lastSeen;
+    }
+}
+```
+The function gets a user's lastSeen value and subtracts it from the current block.timestamp to calculate how many seconds ago the user was last active.
+
+However, it copies the entire struct from storage into memory, even though we only need the lastSeen variable. This wastes gas.
+
+Storage pointers solve this problem by allowing us to directly access the required storage variable without copying the entire struct into memory or using assembly.
+
+```solidity
+// This results in approximately 5,000 gas savings compared to the previous version.
+contract StoragePointerOptimized {
+    struct User {
+        uint256 id;
+        string name;
+        uint256 lastSeen;
+    }
+
+    constructor() {
+        users[0] = User(0, "John Doe", block.timestamp);
+    }
+
+    mapping(uint256 => User) public users;
+
+    function returnLastSeenSecondsAgoOptimized(uint256 _id) public view returns (uint256) {
+        User storage _user = users[_id];
+        uint256 lastSeen = block.timestamp - _user.lastSeen;
+        return lastSeen;
+    }
+}
+```
+“The above implementation results in approximately 5,000 gas savings compared to the first version”. Why so, the only change here was changing memory to storage and we were told that anything storage is expensive and should be avoided?
+
+Here we store the storage pointer for users[_id] in a fixed sized variable on the stack (the pointer of a struct is basically the storage slot of the start of the struct, in this case, this will be the storage slot of user[_id].id). Since storage pointers are lazy (meaning they only act(read or write) when called or referenced). Next we only access the lastSeen key of the struct. This way we make a single storage load then store it on the stack, instead of 3 or possibly more storage loads and a memory store before taking a small chunk from memory onto the stack.
