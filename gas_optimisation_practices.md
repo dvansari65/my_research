@@ -246,3 +246,9 @@ contract StoragePointerOptimized {
 “The above implementation results in approximately 5,000 gas savings compared to the first version”. Why so, the only change here was changing memory to storage and we were told that anything storage is expensive and should be avoided?
 
 Here we store the storage pointer for users[_id] in a fixed sized variable on the stack (the pointer of a struct is basically the storage slot of the start of the struct, in this case, this will be the storage slot of user[_id].id). Since storage pointers are lazy (meaning they only act(read or write) when called or referenced). Next we only access the lastSeen key of the struct. This way we make a single storage load then store it on the stack, instead of 3 or possibly more storage loads and a memory store before taking a small chunk from memory onto the stack.
+
+## Avoid having ERC20 token balances go to zero, always keep a small amount
+
+This is related to the avoiding zero writes section above, but it’s worth calling out separately because the implementation is a bit subtle.
+
+If an address is frequently emptying (and reloading) it’s account balance, this will lead to a lot of zero to one writes.
