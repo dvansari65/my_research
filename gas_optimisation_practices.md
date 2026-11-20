@@ -252,3 +252,42 @@ Here we store the storage pointer for users[_id] in a fixed sized variable on th
 This is related to the avoiding zero writes section above, but it’s worth calling out separately because the implementation is a bit subtle.
 
 If an address is frequently emptying (and reloading) it’s account balance, this will lead to a lot of zero to one writes.
+
+## Use bitmaps instead of bools when a significant amount of bools are used
+
+A common pattern , especially in airdrop , it is better to mark address as "already used" when claiming the airdrop or NFT mint
+
+However , since it takes only single bit to store this information , so there can store 256 flags on each slot.
+```solidity
+mapping(uint256 => uint256) private claimedBitMap;
+
+function isClaimed(uint256 index) public view returns (bool) {
+    uint256 wordIndex = index / 256;
+    uint256 bitIndex = index % 256;
+
+    uint256 mask = 1 << bitIndex;
+
+    return (claimedBitMap[wordIndex] & mask) != 0;
+}
+
+function setClaimed(uint256 index) internal {
+    uint256 wordIndex = index / 256;
+    uint256 bitIndex = index % 256;
+
+    uint256 mask = 1 << bitIndex;
+
+    // Set the selected bit to 1.
+    claimedBitMap[wordIndex] |= mask;
+}
+```
+#### How It Works
+
+- wordIndex = index / 256: Determines which mapping entry stores the flag.
+
+- bitIndex = index % 256: Determines the bit position inside that entry.
+
+- 1 << bitIndex: Creates a mask for the selected bit.
+
+- word & mask: Checks whether the selected flag iis already set.
+
+- word | mask: Sets the selected flag to 1 without modifying other bits.
