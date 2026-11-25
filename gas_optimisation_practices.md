@@ -291,3 +291,6 @@ function setClaimed(uint256 index) internal {
 - word & mask: Checks whether the selected flag iis already set.
 
 - word | mask: Sets the selected flag to 1 without modifying other bits.
+
+## Timestamps and block numbers in storage do not need to be uint256
+A timestamp of size uint48 will work for millions of years into the future. A block number increments once every 12 seconds. This should give you a sense of the size of numbers that are sensible.
