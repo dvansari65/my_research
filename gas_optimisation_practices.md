@@ -294,3 +294,6 @@ function setClaimed(uint256 index) internal {
 
 ## Timestamps and block numbers in storage do not need to be uint256
 A timestamp of size uint48 will work for millions of years into the future. A block number increments once every 12 seconds. This should give you a sense of the size of numbers that are sensible.
+
+## Count from n to zero instead of counting from zero to n
+When setting a storage variable to zero, a refund is given, so the net gas spent on counting will be less if the final state of the storage variable is zero.
